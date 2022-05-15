@@ -19,7 +19,7 @@ def send_packet(proto,message = None):
     ip_dst_addr             = '10.0.1.1'
 
     if message != "Start" and message != "End":
-        metadata = "A"
+        metadata = str(message)
     else:
         metadata = message
 
@@ -43,8 +43,6 @@ def send_packet(proto,message = None):
     #pkt.show2()
     #print "sending on interface {} to IP addr {}".format(iface, str(addr))
 
-
-
 # returns eth0 interface for the running host
 def get_if():
     ifs=get_if_list()
@@ -62,9 +60,11 @@ def main():
     # sending the packets
     # the first- "Start", the last "End"
     send_packet("tcp","Start")
-    for i in range(500):
-        send_packet("udp")
-        send_packet("tcp")
+    for i in range(200):
+        send_packet("udp", message =  i)
+        sleep(0.2)
+        send_packet("tcp", message =  i)
+        sleep(0.2)
 
     sleep(3)
     for i in range(5):

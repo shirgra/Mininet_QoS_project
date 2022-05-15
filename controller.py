@@ -35,11 +35,14 @@ import pickle as pkl
 
 FLAG = True
 
-TIME_INTERVAL_BAR = 10
-current_time_interval = 0
+TIME_INTERVAL_BAR = 1
+PACKET_THRESHOLD = 100
+OFF_TIME_INTERVAL = 0
+
+current_time_interval =  0
+old_time_interval = time.time()
 off_time = 0
-PACKET_THRESHOLD = 10
-OFF_TIME_INTERVAL = 3
+old_off_time = time.time()
 
 result = []
 time_start = time.time()
@@ -104,11 +107,9 @@ class CacheSwitch:
         self.obj.WriteTableEntry(table_entry)
         print 'Added a new rule in %s:  %s / %d.' % (self.name_str, dst_ip_addr, mask)
 
-
 ######################################################################################################################################## Functions
 
 """ P4RUNTIME FUNCTIONS """
-
 def p4runtime_init():
     parser = argparse.ArgumentParser(description='P4Runtime Controller')
     parser.add_argument('--p4info', help='p4info proto in text format from p4c',
@@ -133,12 +134,10 @@ def p4runtime_init():
     # return values
     return bmv2_file_path, p4info_helper
 
-
 """ LISTENING TO SWITCHES FUNCTIONS (THREADS) """
-
 def handle_pkt(pkt):
 
-    global result, time_start,udp_counter, tcp_counter, current_time_interval, udp_th, diffserv_flag, off_time, FLAG
+    global result, time_start,udp_counter, tcp_counter, current_time_interval, udp_th, diffserv_flag, off_time, FLAG, old_time_interval, old_off_time
 
     # parse packet 
     dst   = pkt[IP].dst 
@@ -155,29 +154,23 @@ def handle_pkt(pkt):
             print('Starting...')
         if pkt[TCP].load == 'End':
             print("Finished receiver.")
-
-            with open('3_500_results_'+str(PACKET_THRESHOLD)+'_'+str(TIME_INTERVAL_BAR)+'.pkl','wb') as f:
-                pkl.dump(result, f)
-
             FLAG = False
-
 
         tmp = [time.time()-time_start, 'TCP', tcp_counter]
         result.append(tmp)
         tcp_counter += 1
-        sys.stdout.flush()
 
         print tmp
-        return None
-
 
     ### CHECK big traffic of udp
 
-    current_time_interval = time.time() - current_time_interval
+    current_time_interval = time.time() - old_time_interval
 
+    
     if current_time_interval > TIME_INTERVAL_BAR:
 
         current_time_interval = 0
+        old_time_interval = time.time()
         udp_th += 1
 
         if udp_th > PACKET_THRESHOLD:
@@ -186,32 +179,30 @@ def handle_pkt(pkt):
 
             #except only TCP
             diffserv_flag = True
-            off_time = time.time()
+            off_time = 0
+            old_off_time = time.time()
 
-            None
 
-        None
+    if diffserv_flag:
 
-    off_time = time.time() - off_time
+        off_time = time.time() - old_off_time
 
-    if off_time > OFF_TIME_INTERVAL:
-        # except all packets
-        diffserv_flag = False
+        if off_time > OFF_TIME_INTERVAL:
+            # except all packets
+            diffserv_flag = False
+
 
     ### only if we except udp
+    if not diffserv_flag:
 
-    if UDP in pkt and pkt[UDP].dport == 1234 and not diffserv_flag:
+        if UDP in pkt and pkt[UDP].dport == 1234:
 
-        tmp = [time.time()-time_start, 'UDP', udp_counter]
-        result.append(tmp)
-        udp_counter += 1
-        sys.stdout.flush()
+            tmp = [time.time()-time_start, 'UDP', udp_counter]
+            result.append(tmp)
+            udp_counter += 1
+            udp_th += 1
 
-        print tmp
-        None
-
-
-    
+            print tmp  
 
 ######################################################################################################################################## MAIN
 
@@ -254,9 +245,12 @@ print("********************************************")
 
 ################################################################################################################ Open threads - listen to hit counts and act on it
 
-
 while FLAG:
     sniff(count = 1, iface = "s1-eth1", prn = lambda pkt: handle_pkt(pkt))
+    sys.stdout.flush()
+
+with open('../results/3_200_results_'+str(PACKET_THRESHOLD)+'_'+str(TIME_INTERVAL_BAR)+'.pkl','wb') as f:
+    pkl.dump(result, f) 
 
 print("********************************************")
 
